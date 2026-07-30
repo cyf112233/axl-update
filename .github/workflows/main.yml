@@ -12,11 +12,42 @@ jobs:
   sync-release:
     runs-on: ubuntu-latest
     steps:
+      # ---------- 1. 安装基础工具（git、curl、jq）----------
       - name: Install base dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl git python3-pip
+          sudo apt-get install -y jq curl git
 
+      # ---------- 2. 获取上游最新 Release tag ----------
+      - name: Get latest upstream release
+        id: upstream
+        run: |
+          RESPONSE=$(curl -s https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest)
+          TAG=$(echo "$RESPONSE" | jq -r '.tag_name')
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # ---------- 3. 检查 fork 仓库是否已有该 tag（轻量级，无需克隆）----------
+      - name: Check if tag already exists in fork
+        id: check_tag
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+          # 使用 git ls-remote 检查远程 tag 是否存在
+          if git ls-remote --tags https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git refs/tags/$TAG | grep -q .; then
+            echo "Tag $TAG already exists in fork, skipping."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG does not exist, will sync."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ---------- 4. 如果 tag 已存在，直接退出（节省资源）----------
+      - name: Exit if already synced
+        if: steps.check_tag.outputs.exists == 'true'
+        run: |
+          echo "Already up to date with ${{ steps.upstream.outputs.tag }}"
+          exit 0
+
+      # ---------- 5. 安装 flatpak-builder-tools（仅在需要更新时执行）----------
       - name: Setup flatpak builder tools
         run: |
           sudo apt-get install -y pipx
@@ -27,37 +58,17 @@ jobs:
           git clone https://github.com/flatpak/flatpak-builder-tools.git
           pip install aiohttp tomlkit PyYAML
 
-      - name: Get latest upstream release
-        id: upstream
-        run: |
-          RESPONSE=$(curl -s https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest)
-          TAG=$(echo "$RESPONSE" | jq -r '.tag_name')
-          URL="https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/${TAG}.tar.gz"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "url=$URL" >> $GITHUB_OUTPUT
-
-      - name: Get current version from fork
-        id: fork
-        run: |
-          git clone --branch flathub --depth 1 https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git fork-repo 2>/dev/null || echo "Branch not found, will create new"
-          if [ -d fork-repo ] && [ -f fork-repo/.current_version ]; then
-            CURRENT=$(cat fork-repo/.current_version)
-          else
-            CURRENT="none"
-          fi
-          echo "current=$CURRENT" >> $GITHUB_OUTPUT
-
+      # ---------- 6. 生成并推送新版本 ----------
       - name: Generate and push
-        if: steps.upstream.outputs.tag != steps.fork.outputs.current
         run: |
           NEW_TAG="${{ steps.upstream.outputs.tag }}"
-          NEW_URL="${{ steps.upstream.outputs.url }}"
-          echo "New release: $NEW_TAG"
+          NEW_URL="https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/${NEW_TAG}.tar.gz"
+          echo "Syncing release: $NEW_TAG"
 
           mkdir -p workspace
           cd workspace
 
-          # 下载源码包（重试一次防止网络问题）
+          # 下载源码包
           curl -L --retry 3 --retry-delay 2 "$NEW_URL" -o source.tar.gz
           if [ ! -f source.tar.gz ]; then
             echo "Download failed"
@@ -72,7 +83,7 @@ jobs:
           SOURCE_DIR=$(tar -tf source.tar.gz | head -1 | cut -d'/' -f1)
           cd "$SOURCE_DIR"
 
-          # 生成 cargo-sources.json（使用相对路径调用脚本）
+          # 生成 cargo-sources.json
           echo "Generating cargo-sources.json..."
           python3 ../../flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
           if [ $? -ne 0 ]; then
@@ -80,11 +91,10 @@ jobs:
             exit 1
           fi
 
-          # 生成 pnpm-sources.json
+          # 生成 pnpm-sources.json（如果失败则回退到 npm）
           echo "Generating pnpm-sources.json..."
           flatpak-node-generator pnpm pnpm-lock.yaml -o pnpm-sources.json
           if [ $? -ne 0 ]; then
-            # 如果 pnpm 失败，尝试使用 npm 方式（需先安装 npm）
             echo "pnpm generation failed, trying npm fallback..."
             npm install --package-lock-only
             flatpak-node-generator npm package-lock.json -o pnpm-sources.json
@@ -138,26 +148,36 @@ jobs:
                   sha256: $SHA256
           EOF
 
+          # 保存当前版本
           echo "$NEW_TAG" > .current_version
 
-          # 强制推送到 flathub 分支
+          # ---------- 准备 fork 仓库并推送 ----------
           cd ../../
           rm -rf fork-repo
           git clone https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git fork-repo
           cd fork-repo
-          git checkout --orphan flathub
+
+          # 切换到 flathub 分支（如果不存在则创建）
+          git checkout --orphan flathub 2>/dev/null || git checkout flathub
           rm -rf *
+
+          # 复制生成的文件
           cp ../workspace/$SOURCE_DIR/red.ghs.axolotl.yml .
           cp ../workspace/$SOURCE_DIR/cargo-sources.json .
           cp ../workspace/$SOURCE_DIR/pnpm-sources.json .
           cp ../workspace/$SOURCE_DIR/.current_version .
 
+          # 提交并推送分支
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "chore: sync to upstream release $NEW_TAG"
           git push --force origin flathub
 
+          # ---------- 创建并推送 tag（用于版本标记）----------
+          git tag -f "$NEW_TAG"
+          git push --force origin "$NEW_TAG"
+
       - name: Log status
-        if: steps.upstream.outputs.tag == steps.fork.outputs.current
+        if: steps.check_tag.outputs.exists == 'true'
         run: echo "Already up to date with ${{ steps.upstream.outputs.tag }}"
