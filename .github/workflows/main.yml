@@ -1,4 +1,4 @@
-name: Auto Build Flatpak (Multi-Arch)
+name: Build Flatpak Repo (Multi-Arch)
 
 on:
   schedule:
@@ -9,13 +9,16 @@ permissions:
   contents: write
 
 jobs:
+  # ================================================================
+  # 1. 检测上游新 tag
+  # ================================================================
   detector:
     runs-on: ubuntu-latest
     outputs:
       new_tag: ${{ steps.get_tag.outputs.tag }}
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
-      - name: Install jq and git
+      - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y jq git curl
 
       - name: Get latest upstream release tag
@@ -24,7 +27,7 @@ jobs:
           TAG=$(curl -s https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest | jq -r '.tag_name')
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Check if tag already built
+      - name: Check if tag already built in fork
         id: check
         run: |
           TAG="${{ steps.get_tag.outputs.tag }}"
@@ -34,170 +37,109 @@ jobs:
             echo "should_run=true" >> $GITHUB_OUTPUT
           fi
 
-  build-flatpak-x86_64:
+  # ================================================================
+  # 2. 双架构构建（并行）
+  # ================================================================
+  build:
     needs: detector
     if: needs.detector.outputs.should_run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            appimage_suffix: amd64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            appimage_suffix: aarch64
+    runs-on: ${{ matrix.runner }}
+    env:
+      NEW_TAG: ${{ needs.detector.outputs.new_tag }}
+      ARCH: ${{ matrix.arch }}
+      APPIMAGE_SUFFIX: ${{ matrix.appimage_suffix }}
+    steps:
+      - name: Cleanup disk
+        run: |
+          rm -rf ~/.npm ~/.pnpm-store ~/.cache
+          sudo docker system prune -af 2>/dev/null || true
+          df -h
+
+      - name: Install flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Generate flatpak manifest
+        run: |
+          APPIMAGE_URL="https://github.com/Mystic-Stars/Axolotl/releases/download/$NEW_TAG/Axolotl-Launcher-${APPIMAGE_SUFFIX}.AppImage"
+          cat > red.ghs.axolotl.yml <<EOF
+          id: red.ghs.axolotl
+          runtime: org.freedesktop.Platform
+          runtime-version: '23.08'
+          sdk: org.freedesktop.Sdk
+          command: run-axolotl.sh
+          finish-args:
+            - --socket=x11
+            - --socket=wayland
+            - --share=network
+            - --device=dri
+            - --filesystem=home
+          modules:
+            - name: axolotl
+              buildsystem: simple
+              sources:
+                - type: file
+                  url: $APPIMAGE_URL
+              build-commands:
+                - install -Dm755 Axolotl-Launcher-${APPIMAGE_SUFFIX}.AppImage /app/axolotl/Axolotl\ Launcher
+                - echo '#!/bin/sh' > /app/bin/run-axolotl.sh
+                - echo 'export APPIMAGE_EXTRACT_AND_RUN=1' >> /app/bin/run-axolotl.sh
+                - echo 'exec /app/axolotl/Axolotl\ Launcher "\$@"' >> /app/bin/run-axolotl.sh
+                - chmod +x /app/bin/run-axolotl.sh
+          EOF
+
+      - name: Build Flatpak and generate ostree repo
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: red.ghs.axolotl.yml
+          repository-name: axolotl
+          cache: false
+          upload-artifact: false
+          upload-release: false
+          make-ostree: true
+
+      - name: Package ostree repo
+        run: tar -czf repo-${ARCH}.tar.gz repo/
+
+      - name: Upload repo tarball to Release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Flatpak builds" || true
+          gh release upload "$NEW_TAG" repo-${ARCH}.tar.gz --repo cyf112233/Axolotl-fork --clobber
+
+  # ================================================================
+  # 3. 打 tag（仅在所有构建成功后）
+  # ================================================================
+  tag:
+    needs: build
+    if: always() && !cancelled() && !contains(needs.build.result, 'failure')
     runs-on: ubuntu-latest
     env:
       NEW_TAG: ${{ needs.detector.outputs.new_tag }}
-      ARCH: x86_64
     steps:
-      - name: Cleanup disk
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          repository: cyf112233/Axolotl-fork
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Create and push tag
         run: |
-          rm -rf ~/.npm ~/.pnpm-store ~/.cache
-          sudo docker system prune -af 2>/dev/null || true
-          df -h
-
-      - name: Install flatpak and flatpak-builder
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
-      - name: Generate flatpak manifest
-        run: |
-          cat > red.ghs.axolotl.yml <<EOF
-          id: red.ghs.axolotl
-          runtime: org.kde.Platform
-          runtime-version: "6.6"
-          sdk: org.kde.Sdk
-          command: "Axolotl Launcher"
-
-          sdk-extensions:
-            - org.freedesktop.Sdk.Extension.rust-stable
-
-          finish-args:
-            - --socket=wayland
-            - --socket=fallback-x11
-            - --device=dri
-            - --share=ipc
-            - --socket=pulseaudio
-
-          build-options:
-            append-path: /usr/lib/sdk/rust-stable/bin
-            env:
-              SQLX_OFFLINE: "true"
-              build-args:
-              - --share=network
-
-          modules:
-            - name: axolotl
-              buildsystem: simple
-              build-commands:
-                - git fetch --tags
-                - git checkout tags/$NEW_TAG
-                - git submodule update --init --recursive
-                - curl -L https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-$(uname -m).tar.xz | tar -xJ -C /app
-                - export PATH=/app/node-v22.14.0-linux-$(uname -m)/bin:\$PATH
-                - npm install -g pnpm
-                - cd apps/app
-                - pnpm install --no-frozen-lockfile
-                - pnpm run build
-                - cd ../..
-                - cd apps/app
-                - cargo build --release
-                - install -Dm755 "target/release/Axolotl Launcher" "/app/bin/Axolotl Launcher"
-                - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
-                - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
-              sources:
-                - type: git
-                  url: https://github.com/Mystic-Stars/Axolotl.git
-                  branch: main
-          EOF
-          sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
-
-      - name: Build Flatpak package
-        run: |
-          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo builddir red.ghs.axolotl.yml
-          flatpak build-bundle repo red.ghs.axolotl-$ARCH.flatpak red.ghs.axolotl
-
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Automated Flatpak build" || true
-          gh release upload "$NEW_TAG" red.ghs.axolotl-$ARCH.flatpak --repo cyf112233/Axolotl-fork --clobber
-
-  build-flatpak-arm64:
-    needs: detector
-    if: needs.detector.outputs.should_run == 'true'
-    runs-on: ubuntu-24.04-arm
-    env:
-      NEW_TAG: ${{ needs.detector.outputs.new_tag }}
-      ARCH: aarch64
-    steps:
-      - name: Cleanup disk
-        run: |
-          rm -rf ~/.npm ~/.pnpm-store ~/.cache
-          sudo docker system prune -af 2>/dev/null || true
-          df -h
-
-      - name: Install flatpak and flatpak-builder
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
-      - name: Generate flatpak manifest
-        run: |
-          cat > red.ghs.axolotl.yml <<EOF
-          id: red.ghs.axolotl
-          runtime: org.kde.Platform
-          runtime-version: "6.6"
-          sdk: org.kde.Sdk
-          command: "Axolotl Launcher"
-
-          sdk-extensions:
-            - org.freedesktop.Sdk.Extension.rust-stable
-
-          finish-args:
-            - --socket=wayland
-            - --socket=fallback-x11
-            - --device=dri
-            - --share=ipc
-            - --socket=pulseaudio
-
-          build-options:
-            append-path: /usr/lib/sdk/rust-stable/bin
-            env:
-              SQLX_OFFLINE: "true"
-            build-args:
-              - --share=network
-
-          modules:
-            - name: axolotl
-              buildsystem: simple
-              build-commands:
-                - git fetch --tags
-                - git checkout tags/$NEW_TAG
-                - git submodule update --init --recursive
-                - curl -L https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-$(uname -m).tar.xz | tar -xJ -C /app
-                - export PATH=/app/node-v22.14.0-linux-$(uname -m)/bin:\$PATH
-                - npm install -g pnpm
-                - cd apps/app
-                - pnpm install --no-frozen-lockfile
-                - pnpm run build
-                - cd ../..
-                - cd apps/app
-                - cargo build --release
-                - install -Dm755 "target/release/Axolotl Launcher" "/app/bin/Axolotl Launcher"
-                - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
-                - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
-              sources:
-                - type: git
-                  url: https://github.com/Mystic-Stars/Axolotl.git
-                  branch: main
-          EOF
-          sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
-
-      - name: Build Flatpak package
-        run: |
-          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo builddir red.ghs.axolotl.yml
-          flatpak build-bundle repo red.ghs.axolotl-$ARCH.flatpak red.ghs.axolotl
-
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Automated Flatpak build" || true
-          gh release upload "$NEW_TAG" red.ghs.axolotl-$ARCH.flatpak --repo cyf112233/Axolotl-fork --clobber
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$NEW_TAG"
+          git push --force origin "$NEW_TAG"
