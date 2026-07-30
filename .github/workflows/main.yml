@@ -24,10 +24,14 @@ jobs:
       - name: Clone flatpak-builder-tools
         run: |
               git clone https://github.com/flatpak/flatpak-builder-tools.git
-              pip install -r flatpak-builder-tools/requirements.txt
 
       - name: Generate cargo-sources.json
         run: |
+              sudo apt-get update
+              sudo apt-get install -y pipx
+              pipx ensurepath
+              pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
+              pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=cargo
               python3 flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
       # ---------- 2. 获取上游最新 Release ----------
       - name: Get latest upstream release
