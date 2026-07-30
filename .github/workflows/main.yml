@@ -102,7 +102,7 @@ jobs:
 
       - name: Build Flatpak package
         run: |
-          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --share=network builddir red.ghs.axolotl.yml
+          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo builddir red.ghs.axolotl.yml
           flatpak build-bundle repo red.ghs.axolotl-$ARCH.flatpak red.ghs.axolotl
 
       - name: Upload to Release
@@ -180,7 +180,7 @@ jobs:
 
       - name: Build Flatpak package
         run: |
-          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --share=network builddir red.ghs.axolotl.yml
+          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo builddir red.ghs.axolotl.yml
           flatpak build-bundle repo red.ghs.axolotl-$ARCH.flatpak red.ghs.axolotl
 
       - name: Upload to Release
