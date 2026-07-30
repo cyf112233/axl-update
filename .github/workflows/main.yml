@@ -61,7 +61,10 @@ jobs:
           runtime: org.kde.Platform
           runtime-version: "6.6"
           sdk: org.kde.Sdk
-          command: axolotl
+          command: "Axolotl Launcher"
+
+          sdk-extensions:
+            - org.freedesktop.Sdk.Extension.rust-stable
 
           finish-args:
             - --socket=wayland
@@ -70,38 +73,38 @@ jobs:
             - --share=ipc
             - --socket=pulseaudio
 
-          sdk-extensions:
-            - org.freedesktop.Sdk.Extension.node20
-            - org.freedesktop.Sdk.Extension.rust-stable
-
           build-options:
-            append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+            append-path: /usr/lib/sdk/rust-stable/bin
             env:
               SQLX_OFFLINE: "true"
-            build-args:
+              build-args:
               - --share=network
 
           modules:
             - name: axolotl
               buildsystem: simple
               build-commands:
+                - git fetch --tags
+                - git checkout tags/$NEW_TAG
+                - git submodule update --init --recursive
+                - curl -L https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-$(uname -m).tar.xz | tar -xJ -C /app
+                - export PATH=/app/node-v22.14.0-linux-$(uname -m)/bin:\$PATH
                 - npm install -g pnpm
                 - cd apps/app
                 - pnpm install --no-frozen-lockfile
-                - pnpm run build   # 前端构建（Vite）
-                - cd ../..        # 回到根目录
+                - pnpm run build
+                - cd ../..
                 - cd apps/app
                 - cargo build --release
-                - install -Dm755 target/release/axolotl /app/bin/axolotl
+                - install -Dm755 "target/release/Axolotl Launcher" "/app/bin/Axolotl Launcher"
                 - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
                 - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
               sources:
                 - type: git
                   url: https://github.com/Mystic-Stars/Axolotl.git
-                  tag: $NEW_TAG
-                  submodules: true
-                  commit: $NEW_TAG   # 使用 tag 的 commit
+                  branch: master
           EOF
+          sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
 
       - name: Build Flatpak package
         run: |
@@ -142,7 +145,10 @@ jobs:
           runtime: org.kde.Platform
           runtime-version: "6.6"
           sdk: org.kde.Sdk
-          command: axolotl
+          command: "Axolotl Launcher"
+
+          sdk-extensions:
+            - org.freedesktop.Sdk.Extension.rust-stable
 
           finish-args:
             - --socket=wayland
@@ -151,18 +157,22 @@ jobs:
             - --share=ipc
             - --socket=pulseaudio
 
-          sdk-extensions:
-            - org.freedesktop.Sdk.Extension.node22
-
           build-options:
-            append-path: /usr/lib/sdk/node22/bin
+            append-path: /usr/lib/sdk/rust-stable/bin
             env:
               SQLX_OFFLINE: "true"
+            build-args:
+              - --share=network
 
           modules:
             - name: axolotl
               buildsystem: simple
               build-commands:
+                - git fetch --tags
+                - git checkout tags/$NEW_TAG
+                - git submodule update --init --recursive
+                - curl -L https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-$(uname -m).tar.xz | tar -xJ -C /app
+                - export PATH=/app/node-v22.14.0-linux-$(uname -m)/bin:\$PATH
                 - npm install -g pnpm
                 - cd apps/app
                 - pnpm install --no-frozen-lockfile
@@ -176,10 +186,9 @@ jobs:
               sources:
                 - type: git
                   url: https://github.com/Mystic-Stars/Axolotl.git
-                  tag: $NEW_TAG
-                  submodules: true
-                  commit: $NEW_TAG
+                  branch: master
           EOF
+          sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
 
       - name: Build Flatpak package
         run: |
