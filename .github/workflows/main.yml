@@ -53,6 +53,21 @@ jobs:
           
       - name: Generate and push
         run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+            
+          echo "Cleaning GitHub Actions cache..."
+          rm -rf ~/.npm
+          rm -rf ~/.pnpm-store
+          rm -rf ~/.cache
+            rm -rf ~/.local/share/containers
+          docker system prune -af 2>/dev/null || true
+          rm -rf workspace
+          rm -rf fork-repo
+          find ~ -name "node_modules" -type d -prune -exec rm -rf {} \; 2>/dev/null || true
+          
+          echo "=== Disk space after cleanup ==="
+          df -h
           NEW_TAG="${{ steps.upstream.outputs.tag }}"
           NEW_URL="https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/${NEW_TAG}.tar.gz"
           echo "Syncing release: $NEW_TAG"
