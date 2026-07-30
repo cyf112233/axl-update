@@ -56,7 +56,7 @@ jobs:
           NEW_TAG="${{ steps.upstream.outputs.tag }}"
           NEW_URL="https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/${NEW_TAG}.tar.gz"
           echo "Syncing release: $NEW_TAG"
-
+          
           mkdir -p workspace
           cd workspace
           curl -L --retry 3 --retry-delay 2 "$NEW_URL" -o source.tar.gz
@@ -72,18 +72,28 @@ jobs:
           fi
           SOURCE_DIR=$(tar -tf source.tar.gz | head -1 | cut -d'/' -f1)
           cd "$SOURCE_DIR"
+
           echo "Generating cargo-sources.json..."
           python3 ../../flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
           if [ $? -ne 0 ]; then
             echo "Failed to generate cargo-sources.json"
             exit 1
           fi
-          echo "Generating pnpm-sources.json..."
+          
+          echo "Installing pnpm and generating node_modules..."
           npm install -g pnpm
-          echo "Converting pnpm-lock.yaml to package-lock.json..."
-          npx pnpm-lock-to-npm-lock pnpm-lock.yaml
-          echo "Generating npm-sources.json..."
-          flatpak-node-generator npm package-lock.json -o pnpm-sources.json
+          pnpm install --frozen-lockfile
+          
+          tar -czf node-modules.tar.gz node_modules .pnpm 2>/dev/null || tar -czf node-modules.tar.gz node_modules
+          NODE_MODULES_SHA256=$(sha256sum node-modules.tar.gz | awk '{print $1}')
+          
+          echo "Uploading node-modules.tar.gz to release $NEW_TAG..."
+          export GH_TOKEN=${{ secrets.PAT_TOKEN }}
+          
+          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Automated build" || true
+          
+          gh release upload "$NEW_TAG" node-modules.tar.gz --repo cyf112233/Axolotl-fork --clobber
+          
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
           runtime: org.gnome.Platform
@@ -97,7 +107,7 @@ jobs:
             - --device=dri
             - --share=ipc
             - --socket=pulseaudio
-          
+            
           modules:
             - name: cargo-deps
               buildsystem: simple
@@ -105,14 +115,7 @@ jobs:
               sources:
                 - type: file
                   path: cargo-sources.json
-
-            - name: pnpm-deps
-              buildsystem: simple
-              build-commands: [ echo "pnpm deps ready" ]
-              sources:
-                - type: file
-                  path: pnpm-sources.json
-
+                  
             - name: pnpm-installer
               buildsystem: simple
               build-commands:
@@ -125,7 +128,7 @@ jobs:
                 - mkdir -p /app/pnpm
                 - cp -r package/dist /app/pnpm/
                 - echo '#!/bin/sh' > /app/bin/pnpm
-                - echo 'exec /app/bin/node /app/pnpm/dist/pnpm.cjs "$@"' >> /app/bin/pnpm
+                - echo 'exec /app/bin/node /app/pnpm/dist/pnpm.cjs "\$@"' >> /app/bin/pnpm
                 - chmod +x /app/bin/pnpm
               sources:
                 - type: file
@@ -134,12 +137,13 @@ jobs:
                 - type: file
                   url: https://registry.npmjs.org/pnpm/-/pnpm-9.15.0.tgz
                   sha256: 09a8fe31a34fda706354680619f4002f4ccef6dadff93240d24ef6c831f0fd28
-          
+                  
             - name: axolotl
               buildsystem: simple
               build-commands:
                 - export SQLX_OFFLINE=true
                 - export PATH=/app/bin:$PATH
+                - tar -xzf node-modules.tar.gz
                 - pnpm install --offline --no-frozen-lockfile
                 - cd apps/app
                 - pnpm tauri build --config tauri-release.conf.json --bundles none
@@ -150,8 +154,11 @@ jobs:
                 - type: archive
                   url: $NEW_URL
                   sha256: $SHA256
+                - type: file
+                  url: https://github.com/cyf112233/Axolotl-fork/releases/download/$NEW_TAG/node-modules.tar.gz
+                  sha256: $NODE_MODULES_SHA256
           EOF
-
+          
           echo "$NEW_TAG" > .current_version
           cd ../../
           rm -rf fork-repo
@@ -161,18 +168,14 @@ jobs:
           rm -rf *
           cp ../workspace/$SOURCE_DIR/red.ghs.axolotl.yml .
           cp ../workspace/$SOURCE_DIR/cargo-sources.json .
-          cp ../workspace/$SOURCE_DIR/pnpm-sources.json .
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -rf .
-          git add red.ghs.axolotl.yml
-          git add cargo-sources.json
-          git add pnpm-sources.json
+          git add red.ghs.axolotl.yml cargo-sources.json
           git commit -m "chore: sync to upstream release $NEW_TAG"
           git push --force origin flathub
           git tag -f "$NEW_TAG"
           git push --force origin "$NEW_TAG"
-
+          
       - name: Log status
         if: steps.check_tag.outputs.exists == 'true'
         run: echo "Already up to date with ${{ steps.upstream.outputs.tag }}"
