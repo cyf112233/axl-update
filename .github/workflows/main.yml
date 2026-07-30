@@ -1,9 +1,9 @@
-name: Auto Sync Upstream Release to Fork
+name: Auto Sync Upstream Release to Fork (Full Generation)
 
 on:
   schedule:
     - cron: '*/15 * * * *'   # 每 15 分钟运行一次
-  workflow_dispatch:         # 支持手动触发
+  workflow_dispatch:         # 手动触发调试
 
 permissions:
   contents: write
@@ -12,29 +12,153 @@ jobs:
   sync-release:
     runs-on: ubuntu-latest
     steps:
-      # ---------- 1. 获取上游最新 Release 信息 ----------
+      # ---------- 1. 安装必要工具 ----------
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl git
+          # 安装 Rust（用于 flatpak-cargo-generator）
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          # 安装 flatpak-cargo-generator 和 flatpak-node-generator
+          cargo install flatpak-cargo-generator flatpak-node-generator
+
+      # ---------- 2. 获取上游最新 Release ----------
       - name: Get latest upstream release
         id: upstream
         run: |
-          # 调用 GitHub API 获取最新 Release
           RESPONSE=$(curl -s https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest)
-          TAG=$(echo "$RESPONSE" | jq -r '.tag_name')  # 例如 "v1.6.3"
-          # 源码包 URL（GitHub 自动生成）
+          TAG=$(echo "$RESPONSE" | jq -r '.tag_name')
           URL="https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/${TAG}.tar.gz"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "url=$URL" >> $GITHUB_OUTPUT
 
-      # ---------- 2. 获取当前 fork 分支存储的版本 ----------
+      # ---------- 3. 获取当前 fork 分支的版本（如果存在） ----------
       - name: Get current version from fork
         id: fork
         run: |
-          # 使用 git ls-remote 查看 flathub 分支是否存在 .current_version 文件
-          # 或直接 clone 分支读取文件内容
-          git clone --branch flathub --depth 1 https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git fork-repo
-          cd fork-repo
-          if [ -f .current_version ]; then
-            CURRENT=$(cat .current_version)
+          # 尝试克隆 flathub 分支，如果不存在则跳过
+          git clone --branch flathub --depth 1 https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git fork-repo 2>/dev/null || echo "Branch not found, will create new"
+          if [ -d fork-repo ] && [ -f fork-repo/.current_version ]; then
+            CURRENT=$(cat fork-repo/.current_version)
           else
+            CURRENT="none"
+          fi
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+
+      # ---------- 4. 如果上游有更新（或首次运行），生成所有文件并 force push ----------
+      - name: Generate and push
+        if: steps.upstream.outputs.tag != steps.fork.outputs.current
+        run: |
+          NEW_TAG="${{ steps.upstream.outputs.tag }}"
+          NEW_URL="${{ steps.upstream.outputs.url }}"
+          echo "New release: $NEW_TAG"
+
+          # 创建工作目录
+          mkdir -p workspace
+          cd workspace
+
+          # 下载源码包
+          curl -L "$NEW_URL" -o source.tar.gz
+          SHA256=$(sha256sum source.tar.gz | awk '{print $1}')
+          tar -xzf source.tar.gz
+          # 解压后的目录名可能是 Axolotl-<tag>，但 tag 可能带 v，处理一下
+          SOURCE_DIR=$(tar -tf source.tar.gz | head -1 | cut -d'/' -f1)
+          cd "$SOURCE_DIR"
+
+          # 生成 cargo-sources.json（需要 Cargo.lock）
+          source "$HOME/.cargo/env"
+          flatpak-cargo-generator Cargo.lock -o cargo-sources.json
+
+          # 生成 pnpm-sources.json（需要 pnpm-lock.yaml，且需安装 pnpm 以便解析）
+          npm install -g pnpm
+          flatpak-node-generator pnpm pnpm-lock.yaml -o pnpm-sources.json
+
+          # 创建清单文件 red.ghs.axolotl.yml（写入静态内容和动态 URL/SHA256）
+          cat > red.ghs.axolotl.yml <<EOF
+          id: red.ghs.axolotl
+          runtime: org.gnome.Platform
+          runtime-version: '44'
+          sdk: org.gnome.Sdk
+          command: axolotl
+
+          finish-args:
+            - --socket=wayland
+            - --socket=fallback-x11
+            - --device=dri
+            - --share=ipc
+            - --socket=pulseaudio
+
+          modules:
+            - name: cargo-deps
+              buildsystem: simple
+              build-commands: [ echo "Cargo deps ready" ]
+              sources:
+                - type: file
+                  path: cargo-sources.json
+
+            - name: pnpm-deps
+              buildsystem: simple
+              build-commands: [ echo "pnpm deps ready" ]
+              sources:
+                - type: file
+                  path: pnpm-sources.json
+
+            - name: axolotl
+              buildsystem: simple
+              build-commands:
+                - export SQLX_OFFLINE=true
+                - corepack enable
+                - corepack prepare pnpm@latest --activate
+                - pnpm install --frozen-lockfile --offline
+                - cd apps/app
+                - pnpm tauri build --config tauri-release.conf.json --bundles none
+                - install -Dm755 target/release/axolotl /app/bin/axolotl
+                - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
+                - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
+              sources:
+                - type: archive
+                  url: $NEW_URL
+                  sha256: $SHA256
+                  x-checker-data:
+                    type: json
+                    url: https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest
+                    version-query: .tag_name | sub("^v"; "")
+                    url-query: .assets[] | select(.name=="Axolotl-\${version}.tar.gz") | .browser_download_url
+                    is-main-source: true
+          EOF
+
+          # 创建 .current_version
+          echo "$NEW_TAG" > .current_version
+
+          # 将生成的文件移到新的 git 仓库目录
+          cd ../../
+          # 如果 fork-repo 已存在，删除并重新创建干净目录
+          rm -rf fork-repo
+          git clone https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git fork-repo
+          cd fork-repo
+          git checkout --orphan flathub   # 创建孤立分支，确保干净历史
+          # 删除所有现有文件（如果有）
+          rm -rf *
+          # 复制生成的文件
+          cp -r ../workspace/$SOURCE_DIR/* ./
+          # 确保文件存在
+          ls -l
+
+          # 配置 git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 添加并提交
+          git add .
+          git commit -m "chore: sync to upstream release $NEW_TAG"
+
+          # 强制推送到 flathub 分支（覆盖远程分支）
+          git push --force origin flathub
+
+      - name: Log status
+        if: steps.upstream.outputs.tag == steps.fork.outputs.current
+        run: echo "Already up to date with ${{ steps.upstream.outputs.tag }}"          else
             CURRENT="none"
           fi
           echo "current=$CURRENT" >> $GITHUB_OUTPUT
