@@ -24,7 +24,7 @@ jobs:
       - name: Clone flatpak-builder-tools
         run: |
               git clone https://github.com/flatpak/flatpak-builder-tools.git
-              pip install -r flatpak-builder-tools/requirements.txt 2>/dev/null || true
+              pip install -r flatpak-builder-tools/requirements.txt
 
       - name: Generate cargo-sources.json
         run: |
