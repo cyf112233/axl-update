@@ -104,7 +104,6 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: red.ghs.axolotl.yml
-          repository-name: axolotl
           cache: false
           upload-artifact: false
           upload-release: false
