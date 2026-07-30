@@ -79,9 +79,9 @@ jobs:
           APPIMAGE_URL="https://github.com/Mystic-Stars/Axolotl/releases/download/$NEW_TAG/Axolotl-Launcher-${APPIMAGE_SUFFIX}.AppImage"
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
-          runtime: org.freedesktop.Platform
-          runtime-version: '23.08'
-          sdk: org.freedesktop.Sdk
+          runtime: org.kde.Platform
+          runtime-version: '6.6'
+          sdk: org.kde.Platform
           command: run-axolotl.sh
           finish-args:
             - --socket=x11
