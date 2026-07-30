@@ -59,7 +59,7 @@ jobs:
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
           runtime: org.freedesktop.Platform
-          runtime-version: "23.8"
+          runtime-version: "23.08"
           sdk: org.freedesktop.Sdk
           command: axolotl
 
