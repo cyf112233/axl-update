@@ -20,9 +20,15 @@ jobs:
           # 安装 Rust（用于 flatpak-cargo-generator）
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           source "$HOME/.cargo/env"
-          # 安装 flatpak-cargo-generator 和 flatpak-node-generator
-          cargo install flatpak-cargo-generator flatpak-node-generator
+        
+      - name: Clone flatpak-builder-tools
+        run: |
+              git clone https://github.com/flatpak/flatpak-builder-tools.git
+              pip install -r flatpak-builder-tools/requirements.txt 2>/dev/null || true
 
+      - name: Generate cargo-sources.json
+        run: |
+              python3 flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
       # ---------- 2. 获取上游最新 Release ----------
       - name: Get latest upstream release
         id: upstream
