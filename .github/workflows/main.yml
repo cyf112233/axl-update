@@ -79,26 +79,23 @@ jobs:
             exit 1
           fi
           echo "Generating pnpm-sources.json..."
-          flatpak-node-generator pnpm pnpm-lock.yaml -o pnpm-sources.json
-          if [ $? -ne 0 ]; then
-            echo "pnpm generation failed, trying npm fallback..."
-            npm install --package-lock-only
-            flatpak-node-generator npm package-lock.json -o pnpm-sources.json
-          fi
+          npm install -g pnpm
+          npx pnpm-lock-to-package-lock pnpm-lock.yaml
+          flatpak-node-generator npm package-lock.json -o pnpm-sources.json
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
           runtime: org.gnome.Platform
           runtime-version: '44'
           sdk: org.gnome.Sdk
           command: axolotl
-
+          
           finish-args:
             - --socket=wayland
             - --socket=fallback-x11
             - --device=dri
             - --share=ipc
             - --socket=pulseaudio
-
+          
           modules:
             - name: cargo-deps
               buildsystem: simple
@@ -114,13 +111,34 @@ jobs:
                 - type: file
                   path: pnpm-sources.json
 
+            - name: pnpm-installer
+              buildsystem: simple
+              build-commands:
+                - tar -xf node-v24.15.0-linux-x64.tar.xz
+                - mkdir -p /app/node
+                - cp -r node-v24.15.0-linux-x64/* /app/node/
+                - mkdir -p /app/bin
+                - ln -s /app/node/bin/node /app/bin/node
+                - tar -xzf pnpm-9.15.0.tgz
+                - mkdir -p /app/pnpm
+                - cp -r package/dist /app/pnpm/
+                - echo '#!/bin/sh' > /app/bin/pnpm
+                - echo 'exec /app/bin/node /app/pnpm/dist/pnpm.cjs "$@"' >> /app/bin/pnpm
+                - chmod +x /app/bin/pnpm
+              sources:
+                - type: file
+                  url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz
+                  sha256: 472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6
+                - type: file
+                  url: https://registry.npmjs.org/pnpm/-/pnpm-9.15.0.tgz
+                  sha256: 09a8fe31a34fda706354680619f4002f4ccef6dadff93240d24ef6c831f0fd28
+          
             - name: axolotl
               buildsystem: simple
               build-commands:
                 - export SQLX_OFFLINE=true
-                - corepack enable
-                - corepack prepare pnpm@latest --activate
-                - pnpm install --frozen-lockfile --offline
+                - export PATH=/app/bin:$PATH
+                - pnpm install --offline --no-frozen-lockfile
                 - cd apps/app
                 - pnpm tauri build --config tauri-release.conf.json --bundles none
                 - install -Dm755 "target/release/Axolotl Launcher" "/app/bin/Axolotl Launcher"
