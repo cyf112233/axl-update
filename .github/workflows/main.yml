@@ -58,9 +58,9 @@ jobs:
         run: |
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
-          runtime: org.freedesktop.Platform
-          runtime-version: "23.08"
-          sdk: org.freedesktop.Sdk
+          runtime: org.kde.Platform
+          runtime-version: "6.6"
+          sdk: org.kde.Sdk
           command: axolotl
 
           finish-args:
@@ -71,12 +71,15 @@ jobs:
             - --socket=pulseaudio
 
           sdk-extensions:
-            - org.freedesktop.Sdk.Extension.node22
+            - org.freedesktop.Sdk.Extension.node20
+            - org.freedesktop.Sdk.Extension.rust-stable
 
           build-options:
-            append-path: /usr/lib/sdk/node22/bin
+            append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
             env:
               SQLX_OFFLINE: "true"
+            build-args:
+              - --share=network
 
           modules:
             - name: axolotl
