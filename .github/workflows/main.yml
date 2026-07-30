@@ -169,6 +169,7 @@ jobs:
           # 提交并推送分支
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .
           git add red.ghs.axolotl.yml
           git add cargo-sources.json
           git add pnpm-sources.json
