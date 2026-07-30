@@ -80,7 +80,9 @@ jobs:
           fi
           echo "Generating pnpm-sources.json..."
           npm install -g pnpm
-          npx pnpm-lock-to-package-lock pnpm-lock.yaml
+          echo "Converting pnpm-lock.yaml to package-lock.json..."
+          npx pnpm-lock-to-npm-lock pnpm-lock.yaml
+          echo "Generating npm-sources.json..."
           flatpak-node-generator npm package-lock.json -o pnpm-sources.json
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
