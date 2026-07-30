@@ -165,12 +165,13 @@ jobs:
           cp ../workspace/$SOURCE_DIR/red.ghs.axolotl.yml .
           cp ../workspace/$SOURCE_DIR/cargo-sources.json .
           cp ../workspace/$SOURCE_DIR/pnpm-sources.json .
-          cp ../workspace/$SOURCE_DIR/.current_version .
 
           # 提交并推送分支
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
+          git add red.ghs.axolotl.yml
+          git add cargo-sources.json
+          git add pnpm-sources.json
           git commit -m "chore: sync to upstream release $NEW_TAG"
           git push --force origin flathub
 
