@@ -31,9 +31,9 @@ jobs:
               sudo apt-get install -y pipx
               pipx ensurepath
               pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-              pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=cargo
-              python3 flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
-      # ---------- 2. 获取上游最新 Release ----------
+              git clone https://github.com/flatpak/flatpak-builder-tools.git
+              pip install aiohttp tomlkit PyYAML
+              echo "$PWD/flatpak-builder-tools/cargo" >> $GITHUB_PATH
       - name: Get latest upstream release
         id: upstream
         run: |
