@@ -70,7 +70,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
+          
+      - name: Add flathub remote (system)
+        run: sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+        
       - name: Generate flatpak manifest
         run: |
           APPIMAGE_URL="https://github.com/Mystic-Stars/Axolotl/releases/download/$NEW_TAG/Axolotl-Launcher-${APPIMAGE_SUFFIX}.AppImage"
