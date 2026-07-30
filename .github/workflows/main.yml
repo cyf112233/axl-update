@@ -68,19 +68,17 @@ jobs:
         run: |
           cd $SOURCE_DIR
           pnpm install --no-frozen-lockfile
-          cd apps/app
-          pnpm build   
-
+          cd packages/app-frontend
+          pnpm exec vite build
+      
       - name: Package frontend
         id: package
         run: |
-          cd $SOURCE_DIR/apps/app/dist
+          cd $SOURCE_DIR/packages/app-frontend/dist
           tar -czf frontend-x86_64.tar.gz .
           SHA=$(sha256sum frontend-x86_64.tar.gz | awk '{print $1}')
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
           mv frontend-x86_64.tar.gz ../../../
-          cd ../../../
-          echo "FRONTEND_FILE=$(pwd)/frontend-x86_64.tar.gz" >> $GITHUB_ENV
 
       - name: Upload to Release
         env:
@@ -123,19 +121,17 @@ jobs:
         run: |
           cd $SOURCE_DIR
           pnpm install --no-frozen-lockfile
-          cd apps/app
-          pnpm build
-
+          cd packages/app-frontend
+          pnpm exec vite build
+      
       - name: Package frontend
         id: package
         run: |
-          cd $SOURCE_DIR/apps/app/dist
-          tar -czf frontend-aarch64.tar.gz .
-          SHA=$(sha256sum frontend-aarch64.tar.gz | awk '{print $1}')
+          cd $SOURCE_DIR/packages/app-frontend/dist
+          tar -czf frontend-x86_64.tar.gz .
+          SHA=$(sha256sum frontend-x86_64.tar.gz | awk '{print $1}')
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          mv frontend-aarch64.tar.gz ../../../
-          cd ../../../
-          echo "FRONTEND_FILE=$(pwd)/frontend-aarch64.tar.gz" >> $GITHUB_ENV
+          mv frontend-x86_64.tar.gz ../../../
 
       - name: Upload to Release
         env:
