@@ -102,7 +102,7 @@ jobs:
               sources:
                 - type: git
                   url: https://github.com/Mystic-Stars/Axolotl.git
-                  branch: master
+                  branch: main
           EOF
           sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
 
@@ -186,7 +186,7 @@ jobs:
               sources:
                 - type: git
                   url: https://github.com/Mystic-Stars/Axolotl.git
-                  branch: master
+                  branch: main
           EOF
           sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
 
