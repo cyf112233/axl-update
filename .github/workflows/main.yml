@@ -68,7 +68,8 @@ jobs:
         run: |
           cd $SOURCE_DIR
           pnpm install --no-frozen-lockfile
-          pnpm apps/app build   # 根据项目调整构建命令
+          cd apps/app
+          pnpm build   
 
       - name: Package frontend
         id: package
@@ -122,7 +123,8 @@ jobs:
         run: |
           cd $SOURCE_DIR
           pnpm install --no-frozen-lockfile
-          pnpm apps/app build
+          cd apps/app
+          pnpm build
 
       - name: Package frontend
         id: package
