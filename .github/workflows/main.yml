@@ -167,7 +167,7 @@ jobs:
                 - cd ../..
                 - cd apps/app
                 - cargo build --release
-                - install -Dm755 target/release/axolotl /app/bin/axolotl
+                - install -Dm755 "target/release/Axolotl Launcher" "/app/bin/Axolotl Launcher"
                 - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
                 - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
               sources:
