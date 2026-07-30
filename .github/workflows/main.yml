@@ -1,4 +1,4 @@
-name: Auto Sync Upstream Release to Fork (Multi-Arch Frontend)
+name: Auto Build Flatpak (Multi-Arch)
 
 on:
   schedule:
@@ -24,7 +24,7 @@ jobs:
           TAG=$(curl -s https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest | jq -r '.tag_name')
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Check if tag already exists in fork
+      - name: Check if tag already built
         id: check
         run: |
           TAG="${{ steps.get_tag.outputs.tag }}"
@@ -34,14 +34,13 @@ jobs:
             echo "should_run=true" >> $GITHUB_OUTPUT
           fi
 
-  build-frontend-x86_64:
+  build-flatpak-x86_64:
     needs: detector
     if: needs.detector.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      sha256: ${{ steps.package.outputs.sha256 }}
     env:
       NEW_TAG: ${{ needs.detector.outputs.new_tag }}
+      ARCH: x86_64
     steps:
       - name: Cleanup disk
         run: |
@@ -49,140 +48,14 @@ jobs:
           sudo docker system prune -af 2>/dev/null || true
           df -h
 
-      - name: Download source code
-        run: |
-          curl -L --retry 3 "https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/$NEW_TAG.tar.gz" -o source.tar.gz
-          tar -xzf source.tar.gz
-          SOURCE_DIR=$(tar -tf source.tar.gz | head -1 | cut -d'/' -f1)
-          echo "SOURCE_DIR=$SOURCE_DIR" >> $GITHUB_ENV
-
-      - name: Setup Node.js and pnpm
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '9'
-
-      - name: Install dependencies and build frontend
-        run: |
-          cd $SOURCE_DIR
-          pnpm install --no-frozen-lockfile
-          cd packages/app-frontend
-          pnpm exec vite build
-      
-      - name: Package frontend
-        id: package
-        run: |
-          cd $SOURCE_DIR/packages/app-frontend/dist
-          tar -czf frontend-x86_64.tar.gz .
-          SHA=$(sha256sum frontend-x86_64.tar.gz | awk '{print $1}')
-          echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          mv frontend-x86_64.tar.gz ../../../
-
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Multi-arch build" || true
-          gh release upload "$NEW_TAG" frontend-x86_64.tar.gz --repo cyf112233/Axolotl-fork --clobber
-
-  build-frontend-arm64:
-    needs: detector
-    if: needs.detector.outputs.should_run == 'true'
-    runs-on: ubuntu-24.04-arm
-    outputs:
-      sha256: ${{ steps.package.outputs.sha256 }}
-    env:
-      NEW_TAG: ${{ needs.detector.outputs.new_tag }}
-    steps:
-      - name: Cleanup disk
-        run: |
-          rm -rf ~/.npm ~/.pnpm-store ~/.cache
-          sudo docker system prune -af 2>/dev/null || true
-          df -h
-
-      - name: Download source code
-        run: |
-          curl -L --retry 3 "https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/$NEW_TAG.tar.gz" -o source.tar.gz
-          tar -xzf source.tar.gz
-          SOURCE_DIR=$(tar -tf source.tar.gz | head -1 | cut -d'/' -f1)
-          echo "SOURCE_DIR=$SOURCE_DIR" >> $GITHUB_ENV
-
-      - name: Setup Node.js and pnpm
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '9'
-
-      - name: Install dependencies and build frontend
-        run: |
-          cd $SOURCE_DIR
-          pnpm install --no-frozen-lockfile
-          cd packages/app-frontend
-          pnpm exec vite build
-      
-      - name: Package frontend
-        id: package
-        run: |
-          cd $SOURCE_DIR/packages/app-frontend/dist
-          tar -czf frontend-x86_64.tar.gz .
-          SHA=$(sha256sum frontend-x86_64.tar.gz | awk '{print $1}')
-          echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          mv frontend-x86_64.tar.gz ../../../
-
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Multi-arch build" || true
-          gh release upload "$NEW_TAG" frontend-aarch64.tar.gz --repo cyf112233/Axolotl-fork --clobber
-
-  merge-and-push:
-    needs: [detector, build-frontend-x86_64, build-frontend-arm64]
-    if: always() && needs.detector.outputs.should_run == 'true' && !failure()
-    runs-on: ubuntu-latest
-    env:
-      NEW_TAG: ${{ needs.detector.outputs.new_tag }}
-      X86_SHA: ${{ needs.build-frontend-x86_64.outputs.sha256 }}
-      ARM_SHA: ${{ needs.build-frontend-arm64.outputs.sha256 }}
-    steps:
-      - name: Cleanup disk
-        run: |
-          rm -rf ~/.npm ~/.pnpm-store ~/.cache
-          sudo apt-get clean
-          df -h
-
-      - name: Install dependencies (jq, curl, git, pipx, python)
+      - name: Install flatpak and flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl git pipx python3-pip
-          pipx ensurepath
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Setup flatpak builder tools (for cargo generator)
+      - name: Generate flatpak manifest
         run: |
-          rm -rf flatpak-builder-tools
-          git clone https://github.com/flatpak/flatpak-builder-tools.git
-          pip install aiohttp tomlkit PyYAML
-
-      - name: Download source code
-        run: |
-          curl -L --retry 3 "https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/$NEW_TAG.tar.gz" -o source.tar.gz
-          tar -xzf source.tar.gz
-          SOURCE_DIR=$(tar -tf source.tar.gz | head -1 | cut -d'/' -f1)
-          echo "SOURCE_DIR=$SOURCE_DIR" >> $GITHUB_ENV
-
-      - name: Generate cargo-sources.json
-        run: |
-          cd $SOURCE_DIR
-          python3 ../flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
-
-      - name: Generate red.ghs.axolotl.yml
-        run: |
-          cd $SOURCE_DIR
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
           runtime: org.kde.Platform
@@ -197,68 +70,122 @@ jobs:
             - --share=ipc
             - --socket=pulseaudio
 
-          modules:
-            - name: cargo-deps
-              buildsystem: simple
-              build-commands: [ echo "Cargo deps ready" ]
-              sources:
-                - type: file
-                  path: cargo-sources.json
+          sdk-extensions:
+            - org.freedesktop.Sdk.Extension.node22
 
+          build-options:
+            append-path: /usr/lib/sdk/node22/bin
+            env:
+              SQLX_OFFLINE: "true"
+
+          modules:
             - name: axolotl
               buildsystem: simple
               build-commands:
-                - export SQLX_OFFLINE=true
-                - mkdir -p apps/app/dist
-                - tar -xzf frontend.tar.gz -C apps/app/dist
+                - npm install -g pnpm
+                - cd apps/app
+                - pnpm install --no-frozen-lockfile
+                - pnpm run build   # 前端构建（Vite）
+                - cd ../..        # 回到根目录
                 - cd apps/app
                 - cargo build --release
                 - install -Dm755 target/release/axolotl /app/bin/axolotl
                 - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
                 - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
               sources:
-                - type: archive
-                  url: https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/$NEW_TAG.tar.gz
-                  sha256: ${{ hashFiles('source.tar.gz') }}
-                - type: file
-                  url: https://github.com/cyf112233/Axolotl-fork/releases/download/$NEW_TAG/frontend-x86_64.tar.gz
-                  sha256: $X86_SHA
-                  arch: x86_64
-                  dest-filename: frontend.tar.gz
-                - type: file
-                  url: https://github.com/cyf112233/Axolotl-fork/releases/download/$NEW_TAG/frontend-aarch64.tar.gz
-                  sha256: $ARM_SHA
-                  arch: aarch64
-                  dest-filename: frontend.tar.gz
+                - type: git
+                  url: https://github.com/Mystic-Stars/Axolotl.git
+                  tag: $NEW_TAG
+                  submodules: true
+                  commit: $NEW_TAG   # 使用 tag 的 commit
           EOF
-          sed -i "s/\$NEW_TAG/$NEW_TAG/g" red.ghs.axolotl.yml
-          sed -i "s/\$X86_SHA/$X86_SHA/g" red.ghs.axolotl.yml
-          sed -i "s/\$ARM_SHA/$ARM_SHA/g" red.ghs.axolotl.yml
-          SOURCE_SHA=$(sha256sum source.tar.gz | awk '{print $1}')
-          sed -i "s/sha256: \${{ hashFiles('source.tar.gz') }}/sha256: $SOURCE_SHA/g" red.ghs.axolotl.yml
 
-      - name: Push to fork
+      - name: Build Flatpak package
+        run: |
+          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --share=network builddir red.ghs.axolotl.yml
+          flatpak build-bundle repo red.ghs.axolotl-$ARCH.flatpak red.ghs.axolotl
+
+      - name: Upload to Release
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          cd $SOURCE_DIR
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Automated Flatpak build" || true
+          gh release upload "$NEW_TAG" red.ghs.axolotl-$ARCH.flatpak --repo cyf112233/Axolotl-fork --clobber
 
-          rm -rf ../fork-repo
-          git clone https://x-access-token:$GH_TOKEN@github.com/cyf112233/Axolotl-fork.git ../fork-repo
-          cd ../fork-repo
-          git checkout --orphan flathub 2>/dev/null || git checkout flathub
-          rm -rf *
-          cp ../$SOURCE_DIR/red.ghs.axolotl.yml .
-          cp ../$SOURCE_DIR/cargo-sources.json .
-          git rm -rf .
-          git add red.ghs.axolotl.yml cargo-sources.json
-          git commit -m "chore: sync to upstream release $NEW_TAG" || echo "No changes"
-          git push --force origin flathub
+  build-flatpak-arm64:
+    needs: detector
+    if: needs.detector.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04-arm
+    env:
+      NEW_TAG: ${{ needs.detector.outputs.new_tag }}
+      ARCH: aarch64
+    steps:
+      - name: Cleanup disk
+        run: |
+          rm -rf ~/.npm ~/.pnpm-store ~/.cache
+          sudo docker system prune -af 2>/dev/null || true
+          df -h
 
-          git tag -f "$NEW_TAG"
-          git push --force origin "$NEW_TAG"
+      - name: Install flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Log status
-        run: echo "Successfully synced release $NEW_TAG"
+      - name: Generate flatpak manifest
+        run: |
+          cat > red.ghs.axolotl.yml <<EOF
+          id: red.ghs.axolotl
+          runtime: org.kde.Platform
+          runtime-version: "6.6"
+          sdk: org.kde.Sdk
+          command: axolotl
+
+          finish-args:
+            - --socket=wayland
+            - --socket=fallback-x11
+            - --device=dri
+            - --share=ipc
+            - --socket=pulseaudio
+
+          sdk-extensions:
+            - org.freedesktop.Sdk.Extension.node22
+
+          build-options:
+            append-path: /usr/lib/sdk/node22/bin
+            env:
+              SQLX_OFFLINE: "true"
+
+          modules:
+            - name: axolotl
+              buildsystem: simple
+              build-commands:
+                - npm install -g pnpm
+                - cd apps/app
+                - pnpm install --no-frozen-lockfile
+                - pnpm run build
+                - cd ../..
+                - cd apps/app
+                - cargo build --release
+                - install -Dm755 target/release/axolotl /app/bin/axolotl
+                - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
+                - install -Dm644 src-tauri/tauri.desktop /app/share/applications/red.ghs.axolotl.desktop
+              sources:
+                - type: git
+                  url: https://github.com/Mystic-Stars/Axolotl.git
+                  tag: $NEW_TAG
+                  submodules: true
+                  commit: $NEW_TAG
+          EOF
+
+      - name: Build Flatpak package
+        run: |
+          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --share=network builddir red.ghs.axolotl.yml
+          flatpak build-bundle repo red.ghs.axolotl-$ARCH.flatpak red.ghs.axolotl
+
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Automated Flatpak build" || true
+          gh release upload "$NEW_TAG" red.ghs.axolotl-$ARCH.flatpak --repo cyf112233/Axolotl-fork --clobber
