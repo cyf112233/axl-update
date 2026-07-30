@@ -1,0 +1,77 @@
+name: Auto Sync Upstream Release to Fork
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # 每 15 分钟运行一次
+  workflow_dispatch:         # 支持手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    steps:
+      # ---------- 1. 获取上游最新 Release 信息 ----------
+      - name: Get latest upstream release
+        id: upstream
+        run: |
+          # 调用 GitHub API 获取最新 Release
+          RESPONSE=$(curl -s https://api.github.com/repos/Mystic-Stars/Axolotl/releases/latest)
+          TAG=$(echo "$RESPONSE" | jq -r '.tag_name')  # 例如 "v1.6.3"
+          # 源码包 URL（GitHub 自动生成）
+          URL="https://github.com/Mystic-Stars/Axolotl/archive/refs/tags/${TAG}.tar.gz"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      # ---------- 2. 获取当前 fork 分支存储的版本 ----------
+      - name: Get current version from fork
+        id: fork
+        run: |
+          # 使用 git ls-remote 查看 flathub 分支是否存在 .current_version 文件
+          # 或直接 clone 分支读取文件内容
+          git clone --branch flathub --depth 1 https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/cyf112233/Axolotl-fork.git fork-repo
+          cd fork-repo
+          if [ -f .current_version ]; then
+            CURRENT=$(cat .current_version)
+          else
+            CURRENT="none"
+          fi
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          # 保留 clone 的目录供后续使用
+          echo "repo_path=$PWD" >> $GITHUB_OUTPUT
+
+      # ---------- 3. 如果有新版本，更新清单并 force push ----------
+      - name: Update if new release
+        if: steps.upstream.outputs.tag != steps.fork.outputs.current
+        run: |
+          NEW_TAG="${{ steps.upstream.outputs.tag }}"
+          NEW_URL="${{ steps.upstream.outputs.url }}"
+          echo "New release detected: $NEW_TAG (current: ${{ steps.fork.outputs.current }})"
+
+          cd fork-repo
+
+          # 下载新的源码包并计算 SHA256
+          curl -L "$NEW_URL" -o source.tar.gz
+          SHA256=$(sha256sum source.tar.gz | awk '{print $1}')
+
+          # 更新清单文件（假设是 red.ghs.axolotl.yml）
+          # 将 sources 部分的 url 和 sha256 替换为新值
+          sed -i "s|url: .*|url: $NEW_URL|g" red.ghs.axolotl.yml
+          sed -i "s|sha256: .*|sha256: $SHA256|g" red.ghs.axolotl.yml
+
+          # 更新 .current_version
+          echo "$NEW_TAG" > .current_version
+
+          # 配置 git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 提交变更并强制推送
+          git add red.ghs.axolotl.yml .current_version
+          git commit -m "chore: update to upstream release $NEW_TAG"
+          git push --force origin flathub
+
+      - name: Log status
+        if: steps.upstream.outputs.tag == steps.fork.outputs.current
+        run: echo "Already up to date with version ${{ steps.upstream.outputs.tag }}"
