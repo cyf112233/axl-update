@@ -185,6 +185,7 @@ jobs:
           cp ../workspace/$SOURCE_DIR/cargo-sources.json .
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -rf .
           git add red.ghs.axolotl.yml cargo-sources.json
           git commit -m "chore: sync to upstream release $NEW_TAG"
           git push --force origin flathub
