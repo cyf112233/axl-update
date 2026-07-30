@@ -67,8 +67,8 @@ jobs:
       - name: Install dependencies and build frontend
         run: |
           cd $SOURCE_DIR
-          pnpm install --frozen-lockfile
-          pnpm --filter apps/app build   # 根据项目调整构建命令
+          pnpm install
+          pnpm apps/app build   # 根据项目调整构建命令
 
       - name: Package frontend
         id: package
@@ -121,8 +121,8 @@ jobs:
       - name: Install dependencies and build frontend
         run: |
           cd $SOURCE_DIR
-          pnpm install --frozen-lockfile
-          pnpm --filter apps/app build
+          pnpm install
+          pnpm apps/app build
 
       - name: Package frontend
         id: package
