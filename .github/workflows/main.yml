@@ -62,7 +62,7 @@ jobs:
       - name: Install flatpak and flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder ostree
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Generate flatpak manifest (KDE 6.6)
@@ -115,16 +115,10 @@ jobs:
       - name: Sign flatpak summary
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec' | head -1 | cut -d: -f5)
+          KEY_ID=$(gpg --list-secret-keys --with-colons 2>/dev/null | grep '^sec' | head -1 | cut -d: -f5)
           echo "Using key ID: $KEY_ID"
-          ostree summary --update --repo=repo
-          echo "$GPG_PASSPHRASE" | gpg --batch --passphrase-fd 0 --detach-sign --local-user "$KEY_ID" -o repo/summary.sig repo/summary
-          if [ -f repo/summary.sig ]; then
-            echo "Signing successful"
-          else
-            echo "Signing failed"
-            exit 1
-          fi
+          echo "$GPG_PASSPHRASE" | gpg --batch --passphrase-fd 0 --pinentry-mode loopback --sign
+          ostree summary --repo=repo --gpg-sign="$KEY_ID"
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           
