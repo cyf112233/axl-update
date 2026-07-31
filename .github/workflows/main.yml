@@ -70,10 +70,25 @@ jobs:
           VERSION=${NEW_TAG#v}
           APPIMAGE_NAME="Axolotl.Launcher_${VERSION}_${APPIMAGE_SUFFIX}.AppImage"
           APPIMAGE_URL="https://github.com/Mystic-Stars/Axolotl/releases/download/$NEW_TAG/$APPIMAGE_NAME"
-          
+
           curl -L -o "$APPIMAGE_NAME" "$APPIMAGE_URL"
           SHA256=$(sha256sum "$APPIMAGE_NAME" | awk '{print $1}')
-          
+
+          # 下载图标（重命名为 appid，供 Icon= 引用）
+          curl -L -o axolotl.png "https://raw.githubusercontent.com/Mystic-Stars/Axolotl/main/apps/app/icons/128x128.png"
+
+          # desktop 文件（文件名必须是 appid.desktop）
+          cat > red.ghs.axolotl.desktop <<'EOF'
+          [Desktop Entry]
+          Categories=Game;
+          Exec="Axolotl Launcher"
+          Icon=red.ghs.axolotl
+          Name=Axolotl Launcher
+          Terminal=false
+          Type=Application
+          MimeType=application/x-modrinth-modpack+zip;x-scheme-handler/axolotl;
+          EOF
+
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
           runtime: org.freedesktop.Platform
@@ -94,13 +109,19 @@ jobs:
                   url: $APPIMAGE_URL
                   sha256: $SHA256
                   dest-filename: appimage.AppImage
+                - type: file
+                  path: red.ghs.axolotl.desktop
+                - type: file
+                  path: axolotl.png
               build-commands:
-                - install -Dm755 appimage.AppImage /app/axolotl/Axolotl\ Launcher
+                - install -Dm755 appimage.AppImage '/app/axolotl/Axolotl Launcher'
                 - mkdir -p /app/bin
-                - echo '#!/bin/sh' > /app/bin/run-axolotl.sh
-                - echo 'export APPIMAGE_EXTRACT_AND_RUN=1' >> /app/bin/run-axolotl.sh
-                - echo 'exec /app/axolotl/Axolotl\ Launcher "\$@"' >> /app/bin/run-axolotl.sh
-                - chmod +x /app/bin/run-axolotl.sh
+                - echo '#!/bin/sh' > '/app/bin/Axolotl Launcher'
+                - echo 'export APPIMAGE_EXTRACT_AND_RUN=1' >> '/app/bin/Axolotl Launcher'
+                - echo 'exec "/app/axolotl/Axolotl Launcher" "\$@"' >> '/app/bin/Axolotl Launcher'
+                - chmod +x '/app/bin/Axolotl Launcher'
+                - install -Dm644 red.ghs.axolotl.desktop /app/share/applications/red.ghs.axolotl.desktop
+                - install -Dm644 axolotl.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
           EOF
 
       - name: Import GPG key
