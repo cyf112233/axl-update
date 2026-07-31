@@ -125,8 +125,7 @@ jobs:
 
       - name: Sign flatpak summary
         run: |
-          ostree --repo=repo summary -u
-          gpg --batch --detach-sign --local-user "$KEY_ID" -o repo/summary.sig repo/summary
+          ostree --repo=repo summary -u --gpg-sign="$KEY_ID"
           ls -la repo/summary*
           
       - name: Package ostree repo
