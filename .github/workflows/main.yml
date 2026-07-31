@@ -67,11 +67,10 @@ jobs:
 
       - name: Generate flatpak manifest (KDE 6.6)
         run: |
-          VERSION=${NEW_TAG#v}   # 去掉 v 前缀
+          VERSION=${NEW_TAG#v}
           APPIMAGE_NAME="Axolotl.Launcher_${VERSION}_${APPIMAGE_SUFFIX}.AppImage"
           APPIMAGE_URL="https://github.com/Mystic-Stars/Axolotl/releases/download/$NEW_TAG/$APPIMAGE_NAME"
           
-          # 下载并计算 SHA256
           curl -L -o "$APPIMAGE_NAME" "$APPIMAGE_URL"
           SHA256=$(sha256sum "$APPIMAGE_NAME" | awk '{print $1}')
           
@@ -97,12 +96,12 @@ jobs:
                   dest-filename: appimage.AppImage
               build-commands:
                 - install -Dm755 appimage.AppImage /app/axolotl/Axolotl\ Launcher
+                - mkdir -p /app/bin
                 - echo '#!/bin/sh' > /app/bin/run-axolotl.sh
                 - echo 'export APPIMAGE_EXTRACT_AND_RUN=1' >> /app/bin/run-axolotl.sh
                 - echo 'exec /app/axolotl/Axolotl\ Launcher "\$@"' >> /app/bin/run-axolotl.sh
                 - chmod +x /app/bin/run-axolotl.sh
           EOF
-
       - name: Build Flatpak and generate ostree repo (user mode)
         run: |
           flatpak-builder --user \
