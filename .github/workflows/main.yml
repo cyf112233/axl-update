@@ -105,6 +105,9 @@ jobs:
 
       - name: Build Flatpak and generate ostree repo (user mode)
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gnupg
+          gpg --version | head -n1
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | head -1 | cut -d: -f5)
           echo "Using key ID: $KEY_ID"
