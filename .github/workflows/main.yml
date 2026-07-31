@@ -102,6 +102,7 @@ jobs:
                 - echo 'exec /app/axolotl/Axolotl\ Launcher "\$@"' >> /app/bin/run-axolotl.sh
                 - chmod +x /app/bin/run-axolotl.sh
           EOF
+
       - name: Build Flatpak and generate ostree repo (user mode)
         run: |
           flatpak-builder --user \
@@ -111,6 +112,13 @@ jobs:
             builddir \
             red.ghs.axolotl.yml
 
+      - name: Sign flatpak summary
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
+          ostree summary --repo=repo --sign-with=YOUR_KEY_ID
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          
       - name: Package ostree repo
         run: tar -czf repo-${ARCH}.tar.gz repo/
 
