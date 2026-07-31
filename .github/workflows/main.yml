@@ -155,6 +155,19 @@ jobs:
             fi
           done
 
+      - name: Push repo to flatpak-${ARCH} branch
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          BRANCH_NAME="flatpak-${ARCH}"   # flatpak-amd64 或 flatpak-aarch64
+          cd repo
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update Flatpak repo for $NEW_TAG"
+          git remote add origin https://x-access-token:$GH_TOKEN@github.com/cyf112233/Axolotl-fork.git
+          git push --force origin HEAD:$BRANCH_NAME
   tag:
     needs: [detector, build]
     if: always() && !cancelled() && !contains(needs.build.result, 'failure')
