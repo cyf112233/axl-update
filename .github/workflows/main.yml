@@ -131,6 +131,16 @@ jobs:
           fi
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          
+      - name: Package ostree repo
+        run: tar -czf repo-${ARCH}.tar.gz repo/
+
+      - name: Upload repo tarball to Release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Flatpak builds" || true
+          gh release upload "$NEW_TAG" repo-${ARCH}.tar.gz --repo cyf112233/Axolotl-fork --clobber
 
       - name: Upload individual repo files (summary, sig, config)
         env:
@@ -144,16 +154,6 @@ jobs:
               gh release upload "$NEW_TAG" "$newname" --repo cyf112233/Axolotl-fork --clobber
             fi
           done
-          
-      - name: Package ostree repo
-        run: tar -czf repo-${ARCH}.tar.gz repo/
-
-      - name: Upload repo tarball to Release
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          gh release create "$NEW_TAG" --repo cyf112233/Axolotl-fork --title "Axolotl $NEW_TAG" --notes "Flatpak builds" || true
-          gh release upload "$NEW_TAG" repo-${ARCH}.tar.gz --repo cyf112233/Axolotl-fork --clobber
 
   tag:
     needs: [detector, build]
