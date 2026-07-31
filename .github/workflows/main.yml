@@ -76,9 +76,9 @@ jobs:
           
           cat > red.ghs.axolotl.yml <<EOF
           id: red.ghs.axolotl
-          runtime: org.kde.Platform
-          runtime-version: "6.6"
-          sdk: org.kde.Sdk
+          runtime: org.freedesktop.Platform
+          runtime-version: "24.08"
+          sdk: org.freedesktop.Sdk
           command: run-axolotl.sh
           finish-args:
             - --socket=x11
