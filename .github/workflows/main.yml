@@ -122,7 +122,7 @@ jobs:
           gh release upload "$NEW_TAG" repo-${ARCH}.tar.gz --repo cyf112233/Axolotl-fork --clobber
 
   tag:
-    needs: build
+    needs: [detector, build]
     if: always() && !cancelled() && !contains(needs.build.result, 'failure')
     runs-on: ubuntu-latest
     env:
