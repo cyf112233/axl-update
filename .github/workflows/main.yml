@@ -131,6 +131,19 @@ jobs:
           fi
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Upload individual repo files (summary, sig, config)
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          cd repo
+          for file in summary summary.sig config; do
+            if [ -f "$file" ]; then
+              newname="${file}-${ARCH}"
+              cp "$file" "$newname"
+              gh release upload "$NEW_TAG" "$newname" --repo cyf112233/Axolotl-fork --clobber
+            fi
+          done
           
       - name: Package ostree repo
         run: tar -czf repo-${ARCH}.tar.gz repo/
