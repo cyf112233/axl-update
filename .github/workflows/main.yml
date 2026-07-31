@@ -117,8 +117,18 @@ jobs:
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           KEY_ID=$(gpg --list-secret-keys --with-colons 2>/dev/null | grep '^sec' | head -1 | cut -d: -f5)
           echo "Using key ID: $KEY_ID"
-          echo "$GPG_PASSPHRASE" | gpg --batch --passphrase-fd 0 --pinentry-mode loopback --sign
-          ostree summary --repo=repo --gpg-sign="$KEY_ID"
+          if [ ! -f repo/summary ]; then
+            ostree --repo=repo summary -u
+          fi
+          echo "$GPG_PASSPHRASE" | gpg --batch --passphrase-fd 0 --pinentry-mode loopback \
+            --detach-sign --local-user "$KEY_ID" -o repo/summary.sig repo/summary
+          if [ -f repo/summary.sig ]; then
+            echo "Signing successful"
+            ls -la repo/summary*
+          else
+            echo "Signing failed"
+            exit 1
+          fi
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           
