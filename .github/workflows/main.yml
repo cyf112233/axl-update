@@ -111,6 +111,9 @@ jobs:
           KEYGRIP=$(gpg --list-secret-keys --with-keygrip | grep -m1 'Keygrip' | awk '{print $2}')
           /usr/lib/gnupg/gpg-preset-passphrase --preset "$KEYGRIP" <<< "${{ secrets.GPG_PASSPHRASE }}"
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | head -1 | cut -d: -f5)
+          KEYGRIP=$(gpg --list-secret-keys --with-keygrip | grep -m1 'Keygrip' | awk '{print $2}')
+          gpgconf --launch gpg-agent
+          /usr/lib/gnupg/gpg-preset-passphrase --preset "$KEYGRIP" <<< "${{ secrets.GPG_PASSPHRASE }}"
           echo "Using key ID: $KEY_ID"
           flatpak-builder --user \
             --force-clean \
