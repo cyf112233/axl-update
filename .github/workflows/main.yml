@@ -122,6 +122,10 @@ jobs:
                 - chmod +x '/app/bin/Axolotl Launcher'
                 - install -Dm644 red.ghs.axolotl.desktop /app/share/applications/red.ghs.axolotl.desktop
                 - install -Dm644 axolotl.png /app/share/icons/hicolor/128x128/apps/red.ghs.axolotl.png
+                - echo '#!/bin/sh' > /app/bin/run-axolotl.sh
+                - echo 'export APPIMAGE_EXTRACT_AND_RUN=1' >> /app/bin/run-axolotl.sh
+                - echo 'exec "/app/axolotl/Axolotl Launcher" "\$@"' >> /app/bin/run-axolotl.sh
+                - chmod +x /app/bin/run-axolotl.sh
           EOF
 
       - name: Import GPG key
