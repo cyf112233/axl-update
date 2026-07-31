@@ -103,17 +103,17 @@ jobs:
                 - chmod +x /app/bin/run-axolotl.sh
           EOF
 
+      - name: Import GPG key
+        id: import-gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
       - name: Build Flatpak and generate ostree repo (user mode)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gnupg
-          gpg --version | head -n1
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | head -1 | cut -d: -f5)
+          KEY_ID=${{ steps.import-gpg.outputs.fingerprint }}
           echo "Using key ID: $KEY_ID"
-          gpg --batch --pinentry-mode loopback \
-            --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
-            --quick-change-passphrase "$KEY_ID" ""
           echo "KEY_ID=$KEY_ID" >> "$GITHUB_ENV"
           flatpak-builder --user \
             --force-clean \
